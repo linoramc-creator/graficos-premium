@@ -157,8 +157,14 @@ En *Environment Variables* añade (Production + Preview + Development):
 | `NEXT_PUBLIC_SUPABASE_URL` | URL de tu proyecto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key de Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role (sólo si haces server actions) |
-| `DATA_PROVIDER` | *(opcional)* `yfinance` / `stooq` / `eodhd`. Si lo dejas vacío, usa cascada automática (recomendado) |
-| `EODHD_API_KEY` | *(opcional)* sólo si quieres EODHD como respaldo premium |
+| `TWELVE_DATA_API_KEY` | **muy recomendado** — gratis, 800 req/día. Regístrate en https://twelvedata.com (1 min, sin tarjeta) |
+| `DATA_PROVIDER` | *(opcional)* `yfinance` / `stooq` / `twelvedata` / `eodhd`. Vacío = cascada auto (recomendado) |
+| `EODHD_API_KEY` | *(opcional)* alternativa premium |
+
+> **Por qué Twelve Data**: Yahoo Finance devuelve `HTTP 429` desde las IPs
+> de Vercel (rate-limit a hostings), y Stooq a veces sirve HTML/captcha
+> cuando detecta tráfico cloud. Con `TWELVE_DATA_API_KEY` configurada,
+> la cascada del proxy la usa primero y los datos llegan siempre.
 
 ### 4. Deploy
 

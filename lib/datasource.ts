@@ -32,9 +32,11 @@ export async function fetchHistory(
     ...init
   });
   if (!res.ok) {
-    const detail = await safeText(res);
+    const body = await safeJson(res);
+    const attempts = Array.isArray(body?.attempts) ? body.attempts.join(" · ") : "";
+    const hint = typeof body?.hint === "string" ? ` ${body.hint}` : "";
     throw new DataSourceError(
-      `No se pudo obtener histórico de "${ticker}" (HTTP ${res.status}). ${detail}`
+      `No se pudo obtener "${ticker}".${attempts ? ` Intentos: ${attempts}.` : ""}${hint}`
     );
   }
   const data = (await res.json()) as HistoryResponse;
@@ -54,11 +56,11 @@ export class DataSourceError extends Error {
   }
 }
 
-async function safeText(res: Response): Promise<string> {
+async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
   try {
-    return await res.text();
+    return (await res.json()) as Record<string, unknown>;
   } catch {
-    return "";
+    return null;
   }
 }
 
