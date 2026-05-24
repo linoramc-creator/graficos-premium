@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0a0d14;
+  color: #e7ecf3;
+}
+
+body {
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Scrollbar discreto */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Tarjetas */
+.card {
+  @apply bg-bg-panel border border-border-base rounded-xl p-5 shadow-soft;
+}
+
+/* Etiquetas */
+.kbd {
+  @apply font-mono text-[11px] px-1.5 py-0.5 rounded border border-border-base bg-bg-subtle text-ink-secondary;
+}
+
+/* Acordeón */
+.accordion-trigger {
+  @apply w-full flex items-center justify-between gap-3 text-left py-2 px-3 rounded-lg
+         text-ink-secondary hover:text-ink-primary hover:bg-bg-subtle transition;
+}
+.accordion-body {
+  @apply px-3 pb-3 text-sm leading-relaxed text-ink-secondary;
+}
