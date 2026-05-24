@@ -124,9 +124,60 @@ git push -u origin main
    ```
 4. Activa Email/OAuth en Authentication → Providers.
 
-## Despliegue
+## Despliegue en Vercel (paso a paso)
 
-Cualquier plataforma compatible con Next.js 14 (Vercel, Netlify, Render,
-Railway). Recuerda exportar todas las variables de entorno y, si vas a
-servir desde fuera de EEUU, valorar EODHD frente a yfinance para evitar
-límites de Yahoo.
+> Yahoo Finance bloquea con 401/429 las IPs de cloud (Vercel, AWS,
+> Render…). Por eso `/api/quote` ya implementa una **cascada
+> automática**: intenta Yahoo, si falla cae a **Stooq** (gratis, sin
+> API key, cloud-friendly) y, si configuras `EODHD_API_KEY`, a EODHD.
+> No tienes que tocar nada para que funcione en Vercel.
+
+### 1. Sube la rama a GitHub
+
+```bash
+git push -u origin claude/modest-volta-YQz3P
+# Cuando estés conforme, mergea a main desde la UI de GitHub.
+```
+
+### 2. Importa el proyecto en Vercel
+
+1. Entra en https://vercel.com/new
+2. *Import Git Repository* → `linoramc-creator/graficos-premium`
+3. *Framework Preset* → **Next.js** (autodetectado)
+4. *Build & Output Settings* → deja los valores por defecto
+   (`next build`, `.next`)
+5. *Root Directory* → `./`
+
+### 3. Configura las variables de entorno
+
+En *Environment Variables* añade (Production + Preview + Development):
+
+| Clave | Valor |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL de tu proyecto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key de Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | service role (sólo si haces server actions) |
+| `DATA_PROVIDER` | *(opcional)* `yfinance` / `stooq` / `eodhd`. Si lo dejas vacío, usa cascada automática (recomendado) |
+| `EODHD_API_KEY` | *(opcional)* sólo si quieres EODHD como respaldo premium |
+
+### 4. Deploy
+
+Pulsa **Deploy**. En 1–2 minutos tendrás la URL
+`https://graficos-premium-<hash>.vercel.app`.
+
+### 5. Verifica
+
+- Abre la URL. Debería cargar el ticker por defecto (AAPL).
+- Si la cascada cayó a Stooq verás en el JSON de `/api/quote?ticker=AAPL&range=2y`
+  un campo `"provider": "stooq"`.
+- Si hay error de red total, la UI muestra un banner pero **no se rompe**:
+  los gráficos dependientes quedan en estado vacío.
+
+### Notas
+
+- `vercel.json` fija región `iad1` (Virginia) y `maxDuration=20s` para el
+  endpoint, suficiente para Stooq incluso si Yahoo se cuelga.
+- El motor Monte Carlo se ejecuta **en el navegador** del cliente, así
+  que no consume tiempo de función serverless.
+- Para conmutar manualmente a un único proveedor, define
+  `DATA_PROVIDER=stooq` (o `yfinance` / `eodhd`) en Vercel y redeploy.
