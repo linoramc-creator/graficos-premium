@@ -12,20 +12,19 @@ import {
 } from "recharts";
 import { ChartCard } from "../ChartCard";
 import { EmptyState } from "../EmptyState";
-import { fmtNum, percentile } from "@/lib/format";
+import { fmtNum } from "@/lib/format";
 import type { HistogramBin } from "@/lib/types";
 
 interface Props {
   histogram: HistogramBin[];
-  finalPrices: number[];
+  p05: number;
+  p50: number;
+  p95: number;
   spot: number;
 }
 
-export function MonteCarloHistogram({ histogram, finalPrices, spot }: Props) {
+export function MonteCarloHistogram({ histogram, p05, p50, p95, spot }: Props) {
   const valid = histogram.filter((b) => b && Number.isFinite(b.count));
-  const p05 = finalPrices.length ? percentile(finalPrices, 0.05) : NaN;
-  const p50 = finalPrices.length ? percentile(finalPrices, 0.5) : NaN;
-  const p95 = finalPrices.length ? percentile(finalPrices, 0.95) : NaN;
 
   return (
     <ChartCard

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Header } from "./Header";
 import { InputPanel } from "./InputPanel";
+import { MonteCarloPaths } from "./charts/MonteCarloPaths";
 import { MonteCarloHistogram } from "./charts/MonteCarloHistogram";
-import { TrajectoriesChart } from "./charts/TrajectoriesChart";
 import { RatiosPanel } from "./charts/RatiosPanel";
 import { UnderwaterChart } from "./charts/UnderwaterChart";
 import { RefugeThermometer } from "./charts/RefugeThermometer";
@@ -109,7 +109,8 @@ export function Dashboard() {
         ...prev,
         ticker,
         spot: last?.close ?? prev.spot,
-        volatility: Number.isFinite(annVol) && annVol > 0 ? Number(annVol.toFixed(3)) : prev.volatility
+        volatility:
+          Number.isFinite(annVol) && annVol > 0 ? Number(annVol.toFixed(3)) : prev.volatility
       }));
     } catch (e) {
       setBundle(null);
@@ -140,7 +141,7 @@ export function Dashboard() {
 
   const handleRun = useCallback(() => {
     setLoading(true);
-    // Deja respirar al hilo principal para no congelar la UI con 10k paths.
+    // Cede el hilo principal antes de quemar 10k paths sintéticos.
     setTimeout(() => {
       try {
         const sim = runMonteCarlo(inputs);
@@ -161,9 +162,9 @@ export function Dashboard() {
         <div className="mb-6 rounded-lg border border-accent-danger/40 bg-accent-danger/10 p-4 text-sm text-ink-primary">
           <strong className="text-accent-danger">No se pudo cargar el activo:</strong> {error}
           <p className="text-ink-muted mt-1 text-xs">
-            Puede que el ticker no exista, que Yahoo esté limitando peticiones desde tu hosting,
-            o que la red del entorno no permita salir a Internet. La UI permanece estable: sólo
-            los gráficos dependientes de datos quedan vacíos.
+            Puede que el ticker no exista, que el proveedor esté limitando peticiones desde el
+            hosting, o que la red del entorno no permita salir a Internet. La UI permanece estable:
+            sólo los gráficos dependientes de datos quedan vacíos.
           </p>
         </div>
       )}
@@ -178,13 +179,27 @@ export function Dashboard() {
         />
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Monte Carlo institucional ocupa todo el ancho */}
+          <div className="xl:col-span-2">
+            <MonteCarloPaths
+              bands={simulation?.bands ?? []}
+              sampledPaths={simulation?.sampledPaths ?? []}
+              spot={inputs.spot}
+              medianFinal={simulation?.medianFinal ?? 0}
+              p05Final={simulation?.p05Final ?? 0}
+              p95Final={simulation?.p95Final ?? 0}
+              medianReturn={simulation?.medianReturn ?? 0}
+              probProfit={simulation?.probProfit ?? 0}
+              pathsCount={simulation?.pathsCount ?? 0}
+              horizon={simulation?.horizon ?? inputs.horizonDays}
+            />
+          </div>
+
           <MonteCarloHistogram
             histogram={simulation?.histogram ?? []}
-            finalPrices={simulation?.finalPrices ?? []}
-            spot={inputs.spot}
-          />
-          <TrajectoriesChart
-            trajectories={simulation?.trajectories ?? []}
+            p05={simulation?.p05Final ?? NaN}
+            p50={simulation?.medianFinal ?? NaN}
+            p95={simulation?.p95Final ?? NaN}
             spot={inputs.spot}
           />
           <RatiosPanel report={derived.ratios} />

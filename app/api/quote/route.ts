@@ -308,22 +308,32 @@ function buildAttempts(ticker: string, range: Range, forced: string): Attempt[] 
     return [{ name: "yahoo", fn: () => fetchFromYahoo(ticker, range) }];
   }
 
-  // Cascada por defecto:
-  //   1) Yahoo con cookies+crumb (yfinance auténtico, datos más ricos)
-  //   2) Twelve Data si hay key (RELIABLE desde cloud, sin captcha)
-  //   3) EODHD si hay key
-  //   4) Stooq como red de seguridad pública
-  const attempts: Attempt[] = [
-    { name: "yahoo", fn: () => fetchFromYahoo(ticker, range) }
+  // Orden por tipo de ticker:
+  //   - Índices (^VIX, ^GSPC...) y futuros (BZ=F, CL=F...): Stooq FIRST
+  //     porque Twelve Data free no los cubre y Yahoo a veces los rechaza
+  //     con el mismo header set que sí acepta para acciones.
+  //   - Acciones y ETFs (AAPL, GLD...): Yahoo con crumb + Twelve Data con
+  //     key son los más fiables.
+  const isIndexOrFuture = ticker.startsWith("^") || ticker.includes("=F");
+
+  const yahooAt: Attempt = { name: "yahoo", fn: () => fetchFromYahoo(ticker, range) };
+  const stooqAt: Attempt = { name: "stooq", fn: () => fetchFromStooq(ticker, range) };
+  const tdAt: Attempt | null = process.env.TWELVE_DATA_API_KEY
+    ? { name: "twelvedata", fn: () => fetchFromTwelveData(ticker, range) }
+    : null;
+  const eodhdAt: Attempt | null = process.env.EODHD_API_KEY
+    ? { name: "eodhd", fn: () => fetchFromEODHD(ticker, range) }
+    : null;
+
+  if (isIndexOrFuture) {
+    return [stooqAt, yahooAt, ...(tdAt ? [tdAt] : []), ...(eodhdAt ? [eodhdAt] : [])];
+  }
+  return [
+    yahooAt,
+    ...(tdAt ? [tdAt] : []),
+    ...(eodhdAt ? [eodhdAt] : []),
+    stooqAt
   ];
-  if (process.env.TWELVE_DATA_API_KEY) {
-    attempts.push({ name: "twelvedata", fn: () => fetchFromTwelveData(ticker, range) });
-  }
-  if (process.env.EODHD_API_KEY) {
-    attempts.push({ name: "eodhd", fn: () => fetchFromEODHD(ticker, range) });
-  }
-  attempts.push({ name: "stooq", fn: () => fetchFromStooq(ticker, range) });
-  return attempts;
 }
 
 /* ------------------------------ Yahoo ------------------------------ */

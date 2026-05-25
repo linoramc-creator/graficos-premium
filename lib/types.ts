@@ -32,9 +32,20 @@ export interface HistogramBin {
   count: number;
 }
 
-export interface TrajectoryPoint {
+/**
+ * Banda de percentiles por step temporal. La estructura está pensada para
+ * alimentar directamente Recharts: cada elemento representa un día de
+ * trading y trae el corte transversal de la distribución simulada.
+ */
+export interface BandPoint {
   step: number;
-  [path: `p${number}`]: number;
+  p05: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p95: number;
+  band95: [number, number];
+  band50: [number, number];
 }
 
 export interface UnderwaterPoint {

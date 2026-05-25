@@ -264,15 +264,60 @@ interface AlignedPoint {
   b: number;
 }
 
+/**
+ * Inner-join sobre fechas con forward-fill de tolerancia ±1 día hábil.
+ *
+ * Motivación: cuando dos series vienen de proveedores distintos (p.ej.
+ * AMZN vía Yahoo y ^VIX vía Stooq) puede haber huecos sueltos en la
+ * serie B porque alguna fecha no existe (festivos diferentes, datos
+ * recortados). Para esos casos arrastramos el último cierre conocido de
+ * B (carry-forward, una práctica estándar en pandas: `.reindex(...).ffill()`).
+ * Si tampoco hay nada previo, descartamos esa fecha.
+ */
 function alignByDate(a: PricePoint[], b: PricePoint[]): AlignedPoint[] {
+  if (!a.length || !b.length) return [];
+
+  const cleanB = b
+    .filter((p) => p && Number.isFinite(p.close) && p.close > 0 && typeof p.date === "string")
+    .sort((x, y) => (x.date < y.date ? -1 : 1));
+  if (!cleanB.length) return [];
+
   const mapB = new Map<string, number>();
-  for (const p of b) {
-    if (p && Number.isFinite(p.close) && p.close > 0) mapB.set(p.date, p.close);
+  for (const p of cleanB) mapB.set(p.date, p.close);
+
+  // Para forward-fill: lista ordenada de fechas B, búsqueda binaria.
+  const datesB = cleanB.map((p) => p.date);
+
+  function lastKnownB(date: string): number | null {
+    const direct = mapB.get(date);
+    if (typeof direct === "number") return direct;
+    // Búsqueda binaria del mayor date_b <= date.
+    let lo = 0;
+    let hi = datesB.length - 1;
+    let best = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (datesB[mid] <= date) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best < 0) return null;
+    // Solo aceptamos forward-fill si la fecha B previa está a 5 días o menos
+    // (descartamos arrastres muy lejanos que distorsionan correlaciones).
+    const prevDate = new Date(datesB[best]).getTime();
+    const targetDate = new Date(date).getTime();
+    const gapDays = (targetDate - prevDate) / (1000 * 60 * 60 * 24);
+    if (gapDays > 5) return null;
+    return mapB.get(datesB[best]) ?? null;
   }
+
   const out: AlignedPoint[] = [];
   for (const p of a) {
     if (!p || !Number.isFinite(p.close) || p.close <= 0) continue;
-    const bv = mapB.get(p.date);
+    const bv = lastKnownB(p.date);
     if (typeof bv === "number") out.push({ date: p.date, a: p.close, b: bv });
   }
   return out;
