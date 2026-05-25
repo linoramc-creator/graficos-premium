@@ -32,14 +32,17 @@ const STOOQ_MAP: Record<string, string> = {
   "QQQ": "qqq.us"
 };
 
-const TWELVE_DATA_MAP: Record<string, string> = {
-  "^VIX": "VIX",
-  "^GSPC": "SPX",
-  "^DJI": "DJI",
-  "^IXIC": "IXIC",
-  "BZ=F": "BRENT",
-  "CL=F": "WTI",
-  "GC=F": "XAU/USD"
+// Twelve Data nombra varios tickers de forma diferente a Yahoo. Para los
+// "raros" probamos varias variantes en orden hasta que alguna devuelva datos
+// (algunas requieren plan premium; las free aún sirven el resto).
+const TWELVE_DATA_VARIANTS: Record<string, string[]> = {
+  "^VIX": ["VIX", "VIX:INDEX"],
+  "^GSPC": ["SPX", "SPX:INDEX", "GSPC"],
+  "^DJI": ["DJI", "DJI:INDEX"],
+  "^IXIC": ["IXIC", "IXIC:INDEX", "NDX"],
+  "BZ=F": ["BRENT", "BCO/USD", "UKOIL"],
+  "CL=F": ["WTI", "WTI/USD", "USOIL"],
+  "GC=F": ["XAU/USD", "GOLD"]
 };
 
 const BROWSER_UA =
@@ -233,9 +236,9 @@ function toStooqSymbol(ticker: string): string {
   return `${ticker.toLowerCase()}.us`;
 }
 
-function toTwelveDataSymbol(ticker: string): string {
-  if (TWELVE_DATA_MAP[ticker]) return TWELVE_DATA_MAP[ticker];
-  return ticker;
+function twelveDataSymbolCandidates(ticker: string): string[] {
+  if (TWELVE_DATA_VARIANTS[ticker]) return TWELVE_DATA_VARIANTS[ticker];
+  return [ticker];
 }
 
 interface Attempt {
@@ -305,11 +308,13 @@ function buildAttempts(ticker: string, range: Range, forced: string): Attempt[] 
     return [{ name: "yahoo", fn: () => fetchFromYahoo(ticker, range) }];
   }
 
-  // Cascada por defecto: Yahoo (yfinance auténtico con session) primero,
-  // luego Stooq, luego claves premium si las hay.
+  // Cascada por defecto:
+  //   1) Yahoo con cookies+crumb (yfinance auténtico, datos más ricos)
+  //   2) Twelve Data si hay key (RELIABLE desde cloud, sin captcha)
+  //   3) EODHD si hay key
+  //   4) Stooq como red de seguridad pública
   const attempts: Attempt[] = [
-    { name: "yahoo", fn: () => fetchFromYahoo(ticker, range) },
-    { name: "stooq", fn: () => fetchFromStooq(ticker, range) }
+    { name: "yahoo", fn: () => fetchFromYahoo(ticker, range) }
   ];
   if (process.env.TWELVE_DATA_API_KEY) {
     attempts.push({ name: "twelvedata", fn: () => fetchFromTwelveData(ticker, range) });
@@ -317,6 +322,7 @@ function buildAttempts(ticker: string, range: Range, forced: string): Attempt[] 
   if (process.env.EODHD_API_KEY) {
     attempts.push({ name: "eodhd", fn: () => fetchFromEODHD(ticker, range) });
   }
+  attempts.push({ name: "stooq", fn: () => fetchFromStooq(ticker, range) });
   return attempts;
 }
 
@@ -481,28 +487,50 @@ async function fetchFromStooq(ticker: string, range: Range): Promise<PricePoint[
 async function fetchFromTwelveData(ticker: string, range: Range): Promise<PricePoint[]> {
   const key = process.env.TWELVE_DATA_API_KEY;
   if (!key) throw new Error("TWELVE_DATA_API_KEY no configurada");
-  const symbol = toTwelveDataSymbol(ticker);
+  const candidates = twelveDataSymbolCandidates(ticker);
   const outputsize = Math.min(5000, RANGE_DAYS[range]);
-  const u =
-    `https://api.twelvedata.com/time_series` +
-    `?symbol=${encodeURIComponent(symbol)}` +
-    `&interval=1day&outputsize=${outputsize}` +
-    `&apikey=${encodeURIComponent(key)}`;
-  const res = await fetchWithTimeout(u, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    status?: string;
-    message?: string;
-    values?: Array<{ datetime: string; close: string }>;
-  };
-  if (json.status === "error" || !Array.isArray(json.values)) {
-    throw new Error(json.message || "sin datos");
+
+  const errors: string[] = [];
+  for (const symbol of candidates) {
+    const u =
+      `https://api.twelvedata.com/time_series` +
+      `?symbol=${encodeURIComponent(symbol)}` +
+      `&interval=1day&outputsize=${outputsize}` +
+      `&apikey=${encodeURIComponent(key)}`;
+    try {
+      const res = await fetchWithTimeout(u, { cache: "no-store" });
+      if (!res.ok) {
+        errors.push(`${symbol}: HTTP ${res.status}`);
+        continue;
+      }
+      const json = (await res.json()) as {
+        status?: string;
+        code?: number;
+        message?: string;
+        values?: Array<{ datetime: string; close: string }>;
+      };
+      if (json.status === "error" || !Array.isArray(json.values)) {
+        // code 429 = rate-limit, 401 = key inválida, 404 = símbolo no encontrado.
+        const detail = json.message ? `${json.message}` : "sin datos";
+        errors.push(`${symbol}: ${detail}`);
+        // Si la API key es inválida o estamos rate-limited, no tiene sentido
+        // probar más variantes.
+        if (json.code === 401 || json.code === 429) {
+          throw new Error(`${symbol}: ${detail}`);
+        }
+        continue;
+      }
+      const out = json.values
+        .map((row) => ({ date: row.datetime, close: Number(row.close) }))
+        .filter((p) => Number.isFinite(p.close) && p.close > 0);
+      out.reverse();
+      if (out.length > 0) return out;
+      errors.push(`${symbol}: respuesta vacía`);
+    } catch (e) {
+      errors.push(`${symbol}: ${e instanceof Error ? e.message : "fetch error"}`);
+    }
   }
-  const out = json.values
-    .map((row) => ({ date: row.datetime, close: Number(row.close) }))
-    .filter((p) => Number.isFinite(p.close) && p.close > 0);
-  out.reverse();
-  return out;
+  throw new Error(errors.join(" | "));
 }
 
 /* ------------------------------ EODHD ------------------------------ */
